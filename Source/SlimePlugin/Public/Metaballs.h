@@ -77,6 +77,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Slime")
 	void SetSlimePosition(FVector WorldPosition);
 
+	/**
+	 * Call this from your Character Blueprint when the character lands (e.g. on OnLanded event).
+	 * Triggers a squish-and-recover impulse: balls spread outward then spring back.
+	 * @param Strength  How hard the impact is (0.5 = light, 2.0 = heavy landing).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Slime")
+	void TriggerImpact(float Strength);
+
 	UFUNCTION(BlueprintCallable, Category = "Slime")
 	void SetGravity(float value);
 
@@ -135,6 +143,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Spread Decay Rate"))
 	float m_SpreadDecayRate;
 
+	/*
+	 * Dungeon Slime technique: force applied to each ball when moving.
+	 * The force falls off with squared distance from center-of-mass,
+	 * so balls near the core respond first, outer balls lag behind → slorpy undulating movement.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Input Force Strength"))
+	float m_InputForceStrength;
+
+	/*How fast input force drops off with distance from center of mass (higher = force stays closer to core)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Input Falloff Rate"))
+	float m_InputFalloffRate;
+
 	/*Gravity acceleration pulling balls downward (world Z axis)*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Gravity"))
 	float m_Gravity;
@@ -184,6 +204,9 @@ protected:
 
 	// Current spread multiplier: 1.0 = normal, >1.0 = spread after impact
 	float m_SpreadAmount;
+
+	// Movement delta in normalized ball-space, set by SetSlimePosition each frame
+	FVector m_MoveDelta;
 
 	SMetaBall m_Balls[AMetaballs::MAX_METABALLS];
 
