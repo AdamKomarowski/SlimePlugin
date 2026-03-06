@@ -243,23 +243,30 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 }
 #endif
 
+static void RegisterMappingContext(AController* Controller, UInputMappingContext* IMC)
+{
+	if (!IMC) return;
+	APlayerController* PC = Cast<APlayerController>(Controller);
+	if (!PC) return;
+	UEnhancedInputLocalPlayerSubsystem* Subsystem =
+	    ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer());
+	if (Subsystem)
+	{
+		Subsystem->AddMappingContext(IMC, 0);
+	}
+}
+
 // Called when the game starts or when spawned
 void AMetaballs::BeginPlay()
 {
 	Super::BeginPlay();
+	RegisterMappingContext(GetController(), m_DefaultMappingContext);
+}
 
-	// Register the mapping context with the Enhanced Input subsystem
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
-		        ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-		{
-			if (m_DefaultMappingContext)
-			{
-				Subsystem->AddMappingContext(m_DefaultMappingContext, 0);
-			}
-		}
-	}
+void AMetaballs::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	RegisterMappingContext(NewController, m_DefaultMappingContext);
 }
 
 void AMetaballs::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
