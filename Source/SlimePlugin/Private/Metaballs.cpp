@@ -43,16 +43,19 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_pnGridPointStatus = nullptr;
 	m_pnGridVoxelStatus = nullptr;
 
-	m_SpringStiffness     = 20.0f;
-	m_SpringDamping       = 5.0f;
+	m_SpringStiffness      = 20.0f;
+	m_SpringDamping        = 5.0f;
 	m_ImpactSpreadStrength = 0.5f;
-	m_SpreadDecayRate     = 3.0f;
+	m_SpreadDecayRate      = 3.0f;
+	m_InputForceStrength   = 50.0f;
+	m_InputFalloffRate     = 10.0f;
 
 	m_pfGridEnergy     = nullptr;
 	m_pnGridPointStatus = nullptr;
 	m_pnGridVoxelStatus = nullptr;
 
 	m_SpreadAmount = 1.0f;
+	m_MoveDelta    = FVector::ZeroVector;
 }
 
 void AMetaballs::PostInitializeComponents()
@@ -236,6 +239,13 @@ void AMetaballs::BeginPlay()
 
 void AMetaballs::SetSlimePosition(FVector WorldPosition)
 {
+	// Compute per-frame movement delta and convert to normalized ball space
+	// World Z → ball X, World Y → ball Y, World X → ball Z
+	FVector worldDelta = WorldPosition - GetActorLocation();
+	m_MoveDelta.X = worldDelta.Z / m_Scale;
+	m_MoveDelta.Y = worldDelta.Y / m_Scale;
+	m_MoveDelta.Z = worldDelta.X / m_Scale;
+
 	SetActorLocation(WorldPosition);
 }
 
@@ -259,18 +269,31 @@ void AMetaballs::Update(float dt)
 
 	if (!m_automode)
 	{
-		// --- Character-driven slime: spring physics ---
-		// Ball 0 = core, always at the actor origin in normalized space
+		// --- Character-driven slime (Dungeon Slime technique) ---
+		// Ball 0 = core, locked to actor origin
 		m_Balls[0].p = FVector::ZeroVector;
 		m_Balls[0].v = FVector::ZeroVector;
 
-		// Satellite balls spring toward rest positions, scaled by spread amount
+		// Compute center of mass across all balls
+		FVector CoM = FVector::ZeroVector;
+		for (int i = 0; i < m_NumBalls; i++)
+			CoM += m_Balls[i].p;
+		CoM /= FMath::Max(m_NumBalls, 1);
+
 		for (int i = 1; i < m_NumBalls; i++)
 		{
+			// Spring toward rest position (maintains blob shape + spread on impact)
 			FVector target       = m_Balls[i].rest * m_SpreadAmount;
 			FVector displacement = m_Balls[i].p - target;
 			FVector force        = -m_SpringStiffness * displacement
 			                       - m_SpringDamping  * m_Balls[i].v;
+
+			// Dungeon Slime: input force falls off with squared distance from CoM.
+			// Balls near center respond first to movement → outer balls lag behind
+			// → creates the undulating, slorpy movement feel.
+			float distSqFromCoM = (m_Balls[i].p - CoM).SizeSquared();
+			float inputFalloff  = 1.0f / (1.0f + distSqFromCoM * m_InputFalloffRate);
+			force += m_MoveDelta * m_InputForceStrength * inputFalloff;
 
 			// Gravity pulls satellite balls downward (ball.p.X = world Z)
 			force.X -= m_Gravity;
@@ -278,6 +301,9 @@ void AMetaballs::Update(float dt)
 			m_Balls[i].v += force * dt;
 			m_Balls[i].p += m_Balls[i].v * dt;
 		}
+
+		// Reset delta so it doesn't persist when not moving
+		m_MoveDelta = FVector::ZeroVector;
 	}
 	else
 	{
@@ -898,6 +924,13 @@ void AMetaballs::SetAutoLimitY(float limit)
 void AMetaballs::SetAutoLimitZ(float limit)
 {
 	m_AutoLimitZ = CheckLimit(limit);
+}
+
+void AMetaballs::TriggerImpact(float Strength)
+{
+	// Bump the spread multiplier — satellite balls' rest positions scale outward,
+	// then m_SpreadDecayRate pulls them back to 1.0 (squish-and-recover).
+	m_SpreadAmount = FMath::Min(m_SpreadAmount + Strength * m_ImpactSpreadStrength, 3.0f);
 }
 
 void AMetaballs::SetGravity(float value)
