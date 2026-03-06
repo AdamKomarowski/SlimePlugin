@@ -35,6 +35,14 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_AutoLimitZ = 1.0f;
 	m_Material = nullptr;
 
+	m_Gravity = 2.0f;
+	m_Bounciness = 0.35f;
+	m_Damping = 0.5f;
+
+	m_pfGridEnergy = nullptr;
+	m_pnGridPointStatus = nullptr;
+	m_pnGridVoxelStatus = nullptr;
+
 	m_SpringStiffness     = 20.0f;
 	m_SpringDamping       = 5.0f;
 	m_ImpactSpreadStrength = 0.5f;
@@ -251,32 +259,35 @@ void AMetaballs::Update(float dt)
 
 	if (!m_automode)
 	{
-		// --- Character-driven slime: spring physics (call SetSlimePosition every tick from your character BP) ---
+		// --- Character-driven slime: spring physics ---
 		// Ball 0 = core, always at the actor origin in normalized space
 		m_Balls[0].p = FVector::ZeroVector;
 		m_Balls[0].v = FVector::ZeroVector;
 
-		// Satellite balls (1..N-1) spring toward their rest positions,
-		// scaled by m_SpreadAmount so they spread out on impact then recover
+		// Satellite balls spring toward rest positions, scaled by spread amount
 		for (int i = 1; i < m_NumBalls; i++)
 		{
-			FVector target      = m_Balls[i].rest * m_SpreadAmount;
+			FVector target       = m_Balls[i].rest * m_SpreadAmount;
 			FVector displacement = m_Balls[i].p - target;
-			FVector force       = -m_SpringStiffness * displacement
-			                      - m_SpringDamping   * m_Balls[i].v;
+			FVector force        = -m_SpringStiffness * displacement
+			                       - m_SpringDamping  * m_Balls[i].v;
+
+			// Gravity pulls satellite balls downward (ball.p.X = world Z)
+			force.X -= m_Gravity;
+
 			m_Balls[i].v += force * dt;
 			m_Balls[i].p += m_Balls[i].v * dt;
 		}
 	}
-	else if (m_automode)
+	else
 	{
-		// --- Decorative auto-fly mode (original behavior) ---
+		// --- Auto-fly mode: random target attraction + gravity + bounce ---
 		for (int i = 0; i < m_NumBalls; i++)
 		{
-			m_Balls[i].p.X += dt * m_Balls[i].v.X;
-			m_Balls[i].p.Y += dt * m_Balls[i].v.Y;
-			m_Balls[i].p.Z += dt * m_Balls[i].v.Z;
+			// Gravity pulls balls downward (ball.p.X = world Z)
+			m_Balls[i].v.X -= m_Gravity * dt;
 
+			// Update random target timer
 			m_Balls[i].t -= dt;
 			if (m_Balls[i].t < 0)
 			{
@@ -286,33 +297,73 @@ void AMetaballs::Update(float dt)
 				m_Balls[i].a.Z = m_AutoLimitZ * (float(rand()) / RAND_MAX * 2 - 1);
 			}
 
+			// Accelerate toward target
 			float x = m_Balls[i].a.X - m_Balls[i].p.X;
 			float y = m_Balls[i].a.Y - m_Balls[i].p.Y;
 			float z = m_Balls[i].a.Z - m_Balls[i].p.Z;
-			float fDist = 1 / sqrtf(x*x + y*y + z*z);
-			x *= fDist; y *= fDist; z *= fDist;
-
-			m_Balls[i].v.X += 0.1f * x * dt;
-			m_Balls[i].v.Y += 0.1f * y * dt;
-			m_Balls[i].v.Z += 0.1f * z * dt;
-
-			fDist = m_Balls[i].v.X * m_Balls[i].v.X
-			      + m_Balls[i].v.Y * m_Balls[i].v.Y
-			      + m_Balls[i].v.Z * m_Balls[i].v.Z;
-			if (fDist > 0.040f)
+			float fLen = sqrtf(x*x + y*y + z*z);
+			if (fLen > 0.0001f)
 			{
-				fDist = 1 / sqrtf(fDist);
-				m_Balls[i].v.X = 0.20f * m_Balls[i].v.X * fDist;
-				m_Balls[i].v.Y = 0.20f * m_Balls[i].v.Y * fDist;
-				m_Balls[i].v.Z = 0.20f * m_Balls[i].v.Z * fDist;
+				float fInvLen = 1.0f / fLen;
+				m_Balls[i].v.X += 0.1f * x * fInvLen * dt;
+				m_Balls[i].v.Y += 0.1f * y * fInvLen * dt;
+				m_Balls[i].v.Z += 0.1f * z * fInvLen * dt;
 			}
 
-			if (m_Balls[i].p.X < -m_AutoLimitY + m_fVoxelSize) { m_Balls[i].p.X = -m_AutoLimitY + m_fVoxelSize; m_Balls[i].v.X = 0; }
-			if (m_Balls[i].p.X >  m_AutoLimitY - m_fVoxelSize) { m_Balls[i].p.X =  m_AutoLimitY - m_fVoxelSize; m_Balls[i].v.X = 0; }
-			if (m_Balls[i].p.Y < -m_AutoLimitX + m_fVoxelSize) { m_Balls[i].p.Y = -m_AutoLimitX + m_fVoxelSize; m_Balls[i].v.Y = 0; }
-			if (m_Balls[i].p.Y >  m_AutoLimitX - m_fVoxelSize) { m_Balls[i].p.Y =  m_AutoLimitX - m_fVoxelSize; m_Balls[i].v.Y = 0; }
-			if (m_Balls[i].p.Z < -m_AutoLimitZ + m_fVoxelSize) { m_Balls[i].p.Z = -m_AutoLimitZ + m_fVoxelSize; m_Balls[i].v.Z = 0; }
-			if (m_Balls[i].p.Z >  m_AutoLimitZ - m_fVoxelSize) { m_Balls[i].p.Z =  m_AutoLimitZ - m_fVoxelSize; m_Balls[i].v.Z = 0; }
+			// Apply damping (frame-rate independent)
+			float dampFactor = FMath::Pow(1.0f - FMath::Clamp(m_Damping, 0.0f, 0.9999f), dt);
+			m_Balls[i].v.X *= dampFactor;
+			m_Balls[i].v.Y *= dampFactor;
+			m_Balls[i].v.Z *= dampFactor;
+
+			// Speed cap
+			float fSpeedSq = m_Balls[i].v.X * m_Balls[i].v.X +
+			                 m_Balls[i].v.Y * m_Balls[i].v.Y +
+			                 m_Balls[i].v.Z * m_Balls[i].v.Z;
+			if (fSpeedSq > 0.36f)
+			{
+				float fInvSpeed = 0.6f / sqrtf(fSpeedSq);
+				m_Balls[i].v.X *= fInvSpeed;
+				m_Balls[i].v.Y *= fInvSpeed;
+				m_Balls[i].v.Z *= fInvSpeed;
+			}
+
+			// Integrate position
+			m_Balls[i].p.X += dt * m_Balls[i].v.X;
+			m_Balls[i].p.Y += dt * m_Balls[i].v.Y;
+			m_Balls[i].p.Z += dt * m_Balls[i].v.Z;
+
+			// Boundary collision with bounce (ball.p.X = world Z up/down, bounded by m_AutoLimitY)
+			if (m_Balls[i].p.X < -m_AutoLimitY + m_fVoxelSize)
+			{
+				m_Balls[i].p.X = -m_AutoLimitY + m_fVoxelSize;
+				m_Balls[i].v.X =  FMath::Abs(m_Balls[i].v.X) * m_Bounciness;
+			}
+			if (m_Balls[i].p.X > m_AutoLimitY - m_fVoxelSize)
+			{
+				m_Balls[i].p.X =  m_AutoLimitY - m_fVoxelSize;
+				m_Balls[i].v.X = -FMath::Abs(m_Balls[i].v.X) * m_Bounciness;
+			}
+			if (m_Balls[i].p.Y < -m_AutoLimitX + m_fVoxelSize)
+			{
+				m_Balls[i].p.Y = -m_AutoLimitX + m_fVoxelSize;
+				m_Balls[i].v.Y =  FMath::Abs(m_Balls[i].v.Y) * m_Bounciness;
+			}
+			if (m_Balls[i].p.Y > m_AutoLimitX - m_fVoxelSize)
+			{
+				m_Balls[i].p.Y =  m_AutoLimitX - m_fVoxelSize;
+				m_Balls[i].v.Y = -FMath::Abs(m_Balls[i].v.Y) * m_Bounciness;
+			}
+			if (m_Balls[i].p.Z < -m_AutoLimitZ + m_fVoxelSize)
+			{
+				m_Balls[i].p.Z = -m_AutoLimitZ + m_fVoxelSize;
+				m_Balls[i].v.Z =  FMath::Abs(m_Balls[i].v.Z) * m_Bounciness;
+			}
+			if (m_Balls[i].p.Z > m_AutoLimitZ - m_fVoxelSize)
+			{
+				m_Balls[i].p.Z =  m_AutoLimitZ - m_fVoxelSize;
+				m_Balls[i].v.Z = -FMath::Abs(m_Balls[i].v.Z) * m_Bounciness;
+			}
 		}
 	}
 }
@@ -847,4 +898,19 @@ void AMetaballs::SetAutoLimitY(float limit)
 void AMetaballs::SetAutoLimitZ(float limit)
 {
 	m_AutoLimitZ = CheckLimit(limit);
+}
+
+void AMetaballs::SetGravity(float value)
+{
+	m_Gravity = FMath::Max(0.0f, value);
+}
+
+void AMetaballs::SetBounciness(float value)
+{
+	m_Bounciness = FMath::Clamp(value, 0.0f, 1.0f);
+}
+
+void AMetaballs::SetDamping(float value)
+{
+	m_Damping = FMath::Clamp(value, 0.0f, 1.0f);
 }
