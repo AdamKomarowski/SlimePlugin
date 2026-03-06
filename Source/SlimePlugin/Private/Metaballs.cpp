@@ -10,49 +10,54 @@
 // Sets default values
 AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
-	UCapsuleComponent* CapsuleComp = ObjectInitializer.CreateDefaultSubobject<UCapsuleComponent>(this, TEXT("RootComp"));
-	CapsuleComp->InitCapsuleSize(40.0f, 40.0f);
-	CapsuleComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	CapsuleComp->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CapsuleComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-	CapsuleComp->SetMobility(EComponentMobility::Movable);
-//	RootComponent = CapsuleComp;
+	// Auto-possess Player 0 so this pawn is immediately playable when placed in a level
+	AutoPossessPlayer = EAutoReceiveInput::Player0;
+
+	// Capsule as physics root — provides gravity, collision with floors and walls
+	RootCapsule = ObjectInitializer.CreateDefaultSubobject<UCapsuleComponent>(this, TEXT("RootCapsule"));
+	RootCapsule->InitCapsuleSize(80.0f, 80.0f);
+	RootCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	RootCapsule->SetCollisionResponseToAllChannels(ECR_Block);
+	RootCapsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	RootCapsule->SetSimulatePhysics(true);
+	RootCapsule->SetLinearDamping(1.5f);
+	RootCapsule->SetAngularDamping(10.0f); // prevents the physics body from spinning
+	RootComponent = RootCapsule;
 
 	MetaBallsBoundBox = ObjectInitializer.CreateDefaultSubobject<UBoxComponent>(this, TEXT("GridBox"));
 	MetaBallsBoundBox->InitBoxExtent(FVector(100, 100, 100));
-//	SlimesBoundBox->AttachParent = RootComponent;
+	MetaBallsBoundBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MetaBallsBoundBox->SetupAttachment(RootComponent);
 
-
-
-
+	// Procedural mesh is purely visual — collision is handled by RootCapsule
 	m_mesh = ObjectInitializer.CreateDefaultSubobject<UProceduralMeshComponent>(this, TEXT("MetaballsMesh"));
 	m_mesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-
-	RootComponent = m_mesh;
-	MetaBallsBoundBox->SetupAttachment(RootComponent);
-	CapsuleComp->SetupAttachment(RootComponent);
-
+	m_mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	m_mesh->SetupAttachment(RootComponent);
 
 	m_Scale = 100.0f;
 	m_NumBalls = 8;
-	m_automode = true;
+	m_automode = false; // player-controlled by default; set to true for decorative auto-fly
 	m_GridStep = AMetaballs::MIN_GRID_STEPS;
 	m_randomseed = false;
 	m_AutoLimitX = 1.0f;
 	m_AutoLimitY = 1.0f;
 	m_AutoLimitZ = 1.0f;
-	m_Material = 0;
+	m_Material = nullptr;
 
+	m_MoveSpeed           = 500.0f;
+	m_SpringStiffness     = 20.0f;
+	m_SpringDamping       = 5.0f;
+	m_ImpactSpreadStrength = 0.5f;
+	m_SpreadDecayRate     = 3.0f;
 
-	m_pfGridEnergy = 0;
-	m_pnGridPointStatus = 0;
-	m_pnGridVoxelStatus = 0;
+	m_pfGridEnergy     = nullptr;
+	m_pnGridPointStatus = nullptr;
+	m_pnGridVoxelStatus = nullptr;
 
-
-
+	m_SpreadAmount = 1.0f;
 }
 
 void AMetaballs::PostInitializeComponents()
@@ -85,11 +90,12 @@ void AMetaballs::PostInitializeComponents()
 
 	MetaBallsBoundBox->SetBoxExtent(FVector(m_Scale, m_Scale, m_Scale), false);
 	MetaBallsBoundBox->UpdateBodySetup();
-	
+
+	// Size the collision capsule to match the visual slime radius
+	float capsuleSize = m_Scale * 0.8f;
+	RootCapsule->SetCapsuleSize(capsuleSize, capsuleSize);
+
 	m_mesh->SetMaterial(1, m_Material);
-//	m_mesh->AttachParent = RootComponent;
-	
-//	m_mesh->SetMobility(EComponentMobility::Movable);
 
 
 }
@@ -235,7 +241,57 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 void AMetaballs::BeginPlay()
 {
 	Super::BeginPlay();
+}
 
+void AMetaballs::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	// Requires "MoveForward" and "MoveRight" axis mappings in Project Settings > Input
+	PlayerInputComponent->BindAxis("MoveForward", this, &AMetaballs::MoveForward);
+	PlayerInputComponent->BindAxis("MoveRight",   this, &AMetaballs::MoveRight);
+}
+
+void AMetaballs::MoveForward(float Value)
+{
+	if (Value == 0.0f || !RootCapsule) return;
+
+	FVector Dir = FVector::ForwardVector;
+	if (AController* Ctrl = GetController())
+	{
+		FRotator Rot = Ctrl->GetControlRotation();
+		Rot.Pitch = 0.0f;
+		Rot.Roll  = 0.0f;
+		Dir = FRotationMatrix(Rot).GetUnitAxis(EAxis::X);
+	}
+	// bAccelChange=true makes force mass-independent (feels the same regardless of physics mass setting)
+	RootCapsule->AddForce(Dir * Value * m_MoveSpeed, NAME_None, true);
+}
+
+void AMetaballs::MoveRight(float Value)
+{
+	if (Value == 0.0f || !RootCapsule) return;
+
+	FVector Dir = FVector::RightVector;
+	if (AController* Ctrl = GetController())
+	{
+		FRotator Rot = Ctrl->GetControlRotation();
+		Rot.Pitch = 0.0f;
+		Rot.Roll  = 0.0f;
+		Dir = FRotationMatrix(Rot).GetUnitAxis(EAxis::Y);
+	}
+	RootCapsule->AddForce(Dir * Value * m_MoveSpeed, NAME_None, true);
+}
+
+void AMetaballs::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp,
+                            bool bSelfMoved, FVector HitLocation, FVector HitNormal,
+                            FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+
+	// Scale spread by how hard we hit (NormalImpulse is in kg*cm/s)
+	float ImpactStrength = FMath::Clamp(NormalImpulse.Size() / 2000.0f, 0.05f, 1.0f);
+	m_SpreadAmount = FMath::Clamp(m_SpreadAmount + m_ImpactSpreadStrength * ImpactStrength, 1.0f, 2.5f);
 }
 
 // Called every frame
@@ -253,86 +309,73 @@ void AMetaballs::Tick( float DeltaTime )
 
 void AMetaballs::Update(float dt)
 {
+	// Decay spread back toward 1.0 (normal) over time
+	m_SpreadAmount = FMath::FInterpTo(m_SpreadAmount, 1.0f, dt, m_SpreadDecayRate);
 
-	if (!m_automode)
-		return;
-
-	for (int i = 0; i < m_NumBalls; i++)
+	if (IsPlayerControlled())
 	{
-		m_Balls[i].p.X += dt*m_Balls[i].v.X;
-		m_Balls[i].p.Y += dt*m_Balls[i].v.Y;
-		m_Balls[i].p.Z += dt*m_Balls[i].v.Z;
+		// --- Player-controlled slime: spring physics ---
+		// Ball 0 = core, always at the actor origin in normalized space
+		m_Balls[0].p = FVector::ZeroVector;
+		m_Balls[0].v = FVector::ZeroVector;
 
-		m_Balls[i].t -= dt;
-		if (m_Balls[i].t < 0)
+		// Satellite balls (1..N-1) spring toward their rest positions,
+		// scaled by m_SpreadAmount so they spread out on impact then recover
+		for (int i = 1; i < m_NumBalls; i++)
 		{
-			m_Balls[i].t = float(rand()) / RAND_MAX;
-
-			m_Balls[i].a.X = m_AutoLimitY * (float(rand()) / RAND_MAX * 2 - 1);
-			m_Balls[i].a.Y = m_AutoLimitX * (float(rand()) / RAND_MAX * 2 - 1);
-			m_Balls[i].a.Z = m_AutoLimitZ * (float(rand()) / RAND_MAX * 2 - 1);
-
+			FVector target      = m_Balls[i].rest * m_SpreadAmount;
+			FVector displacement = m_Balls[i].p - target;
+			FVector force       = -m_SpringStiffness * displacement
+			                      - m_SpringDamping   * m_Balls[i].v;
+			m_Balls[i].v += force * dt;
+			m_Balls[i].p += m_Balls[i].v * dt;
 		}
-
-		float x = m_Balls[i].a.X - m_Balls[i].p.X;
-		float y = m_Balls[i].a.Y - m_Balls[i].p.Y;
-		float z = m_Balls[i].a.Z - m_Balls[i].p.Z;
-		float fDist = 1 / sqrtf(x*x + y*y + z*z);
-
-		x *= fDist;
-		y *= fDist;
-		z *= fDist;
-
-		m_Balls[i].v.X += 0.1f*x*dt;
-		m_Balls[i].v.Y += 0.1f*y*dt;
-		m_Balls[i].v.Z += 0.1f*z*dt;
-
-		fDist = m_Balls[i].v.X * m_Balls[i].v.X +
-			m_Balls[i].v.Y * m_Balls[i].v.Y +
-			m_Balls[i].v.Z * m_Balls[i].v.Z;
-
-		if (fDist > 0.040f)
+	}
+	else if (m_automode)
+	{
+		// --- Decorative auto-fly mode (original behavior) ---
+		for (int i = 0; i < m_NumBalls; i++)
 		{
-			fDist = 1 / sqrtf(fDist);
-			m_Balls[i].v.X = 0.20f*m_Balls[i].v.X * fDist;
-			m_Balls[i].v.Y = 0.20f*m_Balls[i].v.Y * fDist;
-			m_Balls[i].v.Z = 0.20f*m_Balls[i].v.Z * fDist;
-		}
+			m_Balls[i].p.X += dt * m_Balls[i].v.X;
+			m_Balls[i].p.Y += dt * m_Balls[i].v.Y;
+			m_Balls[i].p.Z += dt * m_Balls[i].v.Z;
 
-		if (m_Balls[i].p.X < -m_AutoLimitY + m_fVoxelSize)
-		{
-			m_Balls[i].p.X = -m_AutoLimitY + m_fVoxelSize;
-			m_Balls[i].v.X = 0;
-		}
-		if (m_Balls[i].p.X >  m_AutoLimitY - m_fVoxelSize)
-		{
-			m_Balls[i].p.X = m_AutoLimitY - m_fVoxelSize;
-			m_Balls[i].v.X = 0;
-		}
+			m_Balls[i].t -= dt;
+			if (m_Balls[i].t < 0)
+			{
+				m_Balls[i].t   = float(rand()) / RAND_MAX;
+				m_Balls[i].a.X = m_AutoLimitY * (float(rand()) / RAND_MAX * 2 - 1);
+				m_Balls[i].a.Y = m_AutoLimitX * (float(rand()) / RAND_MAX * 2 - 1);
+				m_Balls[i].a.Z = m_AutoLimitZ * (float(rand()) / RAND_MAX * 2 - 1);
+			}
 
-		if (m_Balls[i].p.Y < -m_AutoLimitX + m_fVoxelSize)
-		{
-			m_Balls[i].p.Y = -m_AutoLimitX + m_fVoxelSize;
-			m_Balls[i].v.Y = 0;
-		}
+			float x = m_Balls[i].a.X - m_Balls[i].p.X;
+			float y = m_Balls[i].a.Y - m_Balls[i].p.Y;
+			float z = m_Balls[i].a.Z - m_Balls[i].p.Z;
+			float fDist = 1 / sqrtf(x*x + y*y + z*z);
+			x *= fDist; y *= fDist; z *= fDist;
 
+			m_Balls[i].v.X += 0.1f * x * dt;
+			m_Balls[i].v.Y += 0.1f * y * dt;
+			m_Balls[i].v.Z += 0.1f * z * dt;
 
-		if (m_Balls[i].p.Y >  m_AutoLimitX - m_fVoxelSize)
-		{
-			m_Balls[i].p.Y = m_AutoLimitX - m_fVoxelSize;
-			m_Balls[i].v.Y = 0;
-		}
+			fDist = m_Balls[i].v.X * m_Balls[i].v.X
+			      + m_Balls[i].v.Y * m_Balls[i].v.Y
+			      + m_Balls[i].v.Z * m_Balls[i].v.Z;
+			if (fDist > 0.040f)
+			{
+				fDist = 1 / sqrtf(fDist);
+				m_Balls[i].v.X = 0.20f * m_Balls[i].v.X * fDist;
+				m_Balls[i].v.Y = 0.20f * m_Balls[i].v.Y * fDist;
+				m_Balls[i].v.Z = 0.20f * m_Balls[i].v.Z * fDist;
+			}
 
-
-		if (m_Balls[i].p.Z < -m_AutoLimitZ + m_fVoxelSize)
-		{
-			m_Balls[i].p.Z = -m_AutoLimitZ + m_fVoxelSize;
-			m_Balls[i].v.Z = 0;
-		}
-		if (m_Balls[i].p.Z >  m_AutoLimitZ - m_fVoxelSize)
-		{
-			m_Balls[i].p.Z = m_AutoLimitZ - m_fVoxelSize;
-			m_Balls[i].v.Z = 0;
+			if (m_Balls[i].p.X < -m_AutoLimitY + m_fVoxelSize) { m_Balls[i].p.X = -m_AutoLimitY + m_fVoxelSize; m_Balls[i].v.X = 0; }
+			if (m_Balls[i].p.X >  m_AutoLimitY - m_fVoxelSize) { m_Balls[i].p.X =  m_AutoLimitY - m_fVoxelSize; m_Balls[i].v.X = 0; }
+			if (m_Balls[i].p.Y < -m_AutoLimitX + m_fVoxelSize) { m_Balls[i].p.Y = -m_AutoLimitX + m_fVoxelSize; m_Balls[i].v.Y = 0; }
+			if (m_Balls[i].p.Y >  m_AutoLimitX - m_fVoxelSize) { m_Balls[i].p.Y =  m_AutoLimitX - m_fVoxelSize; m_Balls[i].v.Y = 0; }
+			if (m_Balls[i].p.Z < -m_AutoLimitZ + m_fVoxelSize) { m_Balls[i].p.Z = -m_AutoLimitZ + m_fVoxelSize; m_Balls[i].v.Z = 0; }
+			if (m_Balls[i].p.Z >  m_AutoLimitZ - m_fVoxelSize) { m_Balls[i].p.Z =  m_AutoLimitZ - m_fVoxelSize; m_Balls[i].v.Z = 0; }
 		}
 	}
 }
@@ -718,37 +761,48 @@ void AMetaballs::InitBalls()
 	FDateTime curTime;
 	srand(curTime.GetTicks());
 
-	for (int i = 0; i < AMetaballs::MAX_METABALLS; i++)
+	// Ball 0 = core: always stays at origin in normalized space
+	m_Balls[0].p    = FVector::ZeroVector;
+	m_Balls[0].v    = FVector::ZeroVector;
+	m_Balls[0].a    = FVector::ZeroVector;
+	m_Balls[0].rest = FVector::ZeroVector;
+	m_Balls[0].t    = 0.0f;
+	m_Balls[0].m    = 1.0f;
+
+	// Satellite balls: distribute rest positions evenly on a sphere surface
+	// using the Fibonacci / golden-angle spiral (uniform distribution)
+	const float SatelliteRadius = 0.3f;
+	const float GoldenAngle     = PI * (3.0f - FMath::Sqrt(5.0f)); // ~2.399 rad
+	const int   NumSatellites   = MAX_METABALLS - 1; // 31
+
+	for (int i = 1; i < MAX_METABALLS; i++)
 	{
-		float p0 = 0.0f;
-		float p1 = 0.0f;
-		float p2 = 0.0f;
-		float v0 = 0.0f;
-		float v1 = 0.0f;
-		float v2 = 0.0f;
+		int   idx   = i - 1;
+		float y     = (NumSatellites > 1)
+		              ? 1.0f - (float(idx) / float(NumSatellites - 1)) * 2.0f
+		              : 0.0f;
+		float r     = FMath::Sqrt(FMath::Max(0.0f, 1.0f - y * y));
+		float theta = GoldenAngle * float(idx);
 
-		if (m_randomseed)
-		{
-			p0 = m_AutoLimitY * (float(rand()) / RAND_MAX * 2 - 1);
-			p1 = m_AutoLimitX * (float(rand()) / RAND_MAX * 2 - 1);
-			p2 = m_AutoLimitZ * (float(rand()) / RAND_MAX * 2 - 1);
+		FVector dir(FMath::Cos(theta) * r, FMath::Sin(theta) * r, y);
+		m_Balls[i].rest = dir * SatelliteRadius;
+		m_Balls[i].p    = m_Balls[i].rest; // start at rest position
+		m_Balls[i].v    = FVector::ZeroVector;
+		m_Balls[i].t    = float(rand()) / RAND_MAX;
+		m_Balls[i].m    = 1.0f;
 
-			v0 = (float(rand()) / RAND_MAX * 2 - 1) / 2;
-			v1 = (float(rand()) / RAND_MAX * 2 - 1) / 2;
-			v2 = (float(rand()) / RAND_MAX * 2 - 1) / 2;
-		}
-
-		m_Balls[i].p.X = p0;
-		m_Balls[i].p.Y = p1;
-		m_Balls[i].p.Z = p2;
-		m_Balls[i].v.X = v0;
-		m_Balls[i].v.Y = v1;
-		m_Balls[i].v.Z = v2;
+		// Auto-mode target (used only when not player-controlled)
 		m_Balls[i].a.X = m_AutoLimitY * (float(rand()) / RAND_MAX * 2 - 1);
 		m_Balls[i].a.Y = m_AutoLimitX * (float(rand()) / RAND_MAX * 2 - 1);
 		m_Balls[i].a.Z = m_AutoLimitZ * (float(rand()) / RAND_MAX * 2 - 1);
-		m_Balls[i].t = float(rand()) / RAND_MAX;
-		m_Balls[i].m = 1;
+
+		// Optional small random offset from rest position
+		if (m_randomseed)
+		{
+			m_Balls[i].p.X += (float(rand()) / RAND_MAX * 2 - 1) * 0.05f;
+			m_Balls[i].p.Y += (float(rand()) / RAND_MAX * 2 - 1) * 0.05f;
+			m_Balls[i].p.Z += (float(rand()) / RAND_MAX * 2 - 1) * 0.05f;
+		}
 	}
 }
 
@@ -795,6 +849,13 @@ void AMetaballs::SetScale(float value)
 	}
 
 	m_Scale = ret;
+
+	// Keep collision capsule in sync with visual scale
+	if (RootCapsule)
+	{
+		float capsuleSize = m_Scale * 0.8f;
+		RootCapsule->SetCapsuleSize(capsuleSize, capsuleSize);
+	}
 }
 
 
