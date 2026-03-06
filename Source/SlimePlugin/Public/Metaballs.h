@@ -1,14 +1,9 @@
 #pragma once
 #include "SlimePluginPrivatePCH.h"
-#include "GameFramework/Pawn.h"
+#include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
-#include "InputActionValue.h"
 #include "Metaballs.generated.h"
-
-class UInputMappingContext;
-class UInputAction;
 
 
 DECLARE_LOG_CATEGORY_EXTERN(YourLog, Log, All);
@@ -26,7 +21,7 @@ struct SMetaBall
 
 
 UCLASS()
-class SLIMEPLUGIN_API AMetaballs : public APawn
+class SLIMEPLUGIN_API AMetaballs : public AActor
 {
 	GENERATED_UCLASS_BODY()
 
@@ -46,11 +41,6 @@ public:
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
-	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
-	virtual void PossessedBy(AController* NewController) override;
-	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp,
-	                        bool bSelfMoved, FVector HitLocation, FVector HitNormal,
-	                        FVector NormalImpulse, const FHitResult& Hit) override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& e) override;
@@ -83,6 +73,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Slime")
 	void SetAutoLimitZ(float limit);
 
+	/** Called from your Character Blueprint every tick to move the slime to the character's location. */
+	UFUNCTION(BlueprintCallable, Category = "Slime")
+	void SetSlimePosition(FVector WorldPosition);
+
 	/*Number of metaballs (0 = disable)*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings, meta = (DisplayName = "Number of balls"))
 	int32 m_NumBalls;
@@ -99,7 +93,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings, meta = (DisplayName = "Random seed"))
 	bool m_randomseed;
 
-	/*If true and not possessed by player, balls animate automatically*/
+	/*If true, balls animate automatically (decorative mode). If false, use SetSlimePosition() to drive the slime from a character.*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings, meta = (DisplayName = "Auto fly mode"))
 	bool m_automode;
 
@@ -115,20 +109,6 @@ public:
 	/*Metaballs material*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings, meta = (DisplayName = "Material"))
 	UMaterialInterface* m_Material;
-
-	// --- Player physics ---
-
-	/*Assign an InputMappingContext asset (create it in your project, map WASD to IA_SlimeMove)*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Player", meta = (DisplayName = "Input Mapping Context"))
-	UInputMappingContext* m_DefaultMappingContext;
-
-	/*Assign an InputAction asset with Value Type = Axis2D (Vector2D)*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Player", meta = (DisplayName = "Input Action Move"))
-	UInputAction* m_InputMove;
-
-	/*Force applied per input unit for player movement*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Player", meta = (DisplayName = "Move Speed"))
-	float m_MoveSpeed;
 
 	/*How stiffly satellite balls snap back to rest (higher = stiffer slime)*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Spring Stiffness"))
@@ -147,9 +127,6 @@ public:
 	float m_SpreadDecayRate;
 
 	// Components
-	UPROPERTY(VisibleAnywhere, Category = "Slime")
-	UCapsuleComponent* RootCapsule;
-
 	UPROPERTY()
 	UBoxComponent* MetaBallsBoundBox;
 
@@ -182,9 +159,6 @@ protected:
 	int   ConvertWorldCoordinateToGridPoint(float x);
 	void  AddNeighborsToList(int nCase, int x, int y, int z);
 	void  AddNeighbor(int x, int y, int z);
-
-	// Enhanced Input handler (Axis2D: X = right, Y = forward)
-	void Move(const FInputActionValue& Value);
 
 	float m_fLevel;
 

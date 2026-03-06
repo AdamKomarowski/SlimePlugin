@@ -2,10 +2,6 @@
 #include "SlimePluginPrivatePCH.h"
 #include "CMarchingCubes.h"
 #include "Metaballs.h"
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "InputMappingContext.h"
-#include "InputAction.h"
 
 
 
@@ -16,26 +12,14 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Auto-possess Player 0 so this pawn is immediately playable when placed in a level
-	AutoPossessPlayer = EAutoReceiveInput::Player0;
-
-	// Capsule as physics root — provides gravity, collision with floors and walls
-	RootCapsule = ObjectInitializer.CreateDefaultSubobject<UCapsuleComponent>(this, TEXT("RootCapsule"));
-	RootCapsule->InitCapsuleSize(80.0f, 80.0f);
-	RootCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	RootCapsule->SetCollisionResponseToAllChannels(ECR_Block);
-	RootCapsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	RootCapsule->SetSimulatePhysics(true);
-	RootCapsule->SetLinearDamping(1.5f);
-	RootCapsule->SetAngularDamping(10.0f); // prevents the physics body from spinning
-	RootComponent = RootCapsule;
+	USceneComponent* RootComp = ObjectInitializer.CreateDefaultSubobject<USceneComponent>(this, TEXT("Root"));
+	RootComponent = RootComp;
 
 	MetaBallsBoundBox = ObjectInitializer.CreateDefaultSubobject<UBoxComponent>(this, TEXT("GridBox"));
 	MetaBallsBoundBox->InitBoxExtent(FVector(100, 100, 100));
 	MetaBallsBoundBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MetaBallsBoundBox->SetupAttachment(RootComponent);
 
-	// Procedural mesh is purely visual — collision is handled by RootCapsule
 	m_mesh = ObjectInitializer.CreateDefaultSubobject<UProceduralMeshComponent>(this, TEXT("MetaballsMesh"));
 	m_mesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 	m_mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -51,9 +35,6 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_AutoLimitZ = 1.0f;
 	m_Material = nullptr;
 
-	m_DefaultMappingContext = nullptr;
-	m_InputMove           = nullptr;
-	m_MoveSpeed           = 500.0f;
 	m_SpringStiffness     = 20.0f;
 	m_SpringDamping       = 5.0f;
 	m_ImpactSpreadStrength = 0.5f;
@@ -96,10 +77,6 @@ void AMetaballs::PostInitializeComponents()
 
 	MetaBallsBoundBox->SetBoxExtent(FVector(m_Scale, m_Scale, m_Scale), false);
 	MetaBallsBoundBox->UpdateBodySetup();
-
-	// Size the collision capsule to match the visual slime radius
-	float capsuleSize = m_Scale * 0.8f;
-	RootCapsule->SetCapsuleSize(capsuleSize, capsuleSize);
 
 	m_mesh->SetMaterial(1, m_Material);
 
@@ -243,106 +220,15 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 }
 #endif
 
-static void RegisterMappingContext(AController* Controller, UInputMappingContext* IMC)
-{
-	if (!IMC)
-	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: m_DefaultMappingContext is NULL — assign IMC_Slime on the actor in Details > Slime|Player"));
-		return;
-	}
-	APlayerController* PC = Cast<APlayerController>(Controller);
-	if (!PC)
-	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: no PlayerController yet (RegisterMappingContext called too early)"));
-		return;
-	}
-	UEnhancedInputLocalPlayerSubsystem* Subsystem =
-	    ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer());
-	if (Subsystem)
-	{
-		Subsystem->AddMappingContext(IMC, 0);
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: IMC registered OK"));
-	}
-	else
-	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: EnhancedInputLocalPlayerSubsystem not found — is Enhanced Input enabled in plugins?"));
-	}
-}
-
 // Called when the game starts or when spawned
 void AMetaballs::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(YourLog, Warning, TEXT("AMetaballs [BeginPlay]: Controller=%s"), *GetNameSafe(GetController()));
-	RegisterMappingContext(GetController(), m_DefaultMappingContext);
 }
 
-void AMetaballs::PossessedBy(AController* NewController)
+void AMetaballs::SetSlimePosition(FVector WorldPosition)
 {
-	Super::PossessedBy(NewController);
-	UE_LOG(YourLog, Warning, TEXT("AMetaballs [PossessedBy]: Controller=%s"), *GetNameSafe(NewController));
-	RegisterMappingContext(NewController, m_DefaultMappingContext);
-}
-
-void AMetaballs::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
-{
-	Super::SetupPlayerInputComponent(PlayerInputComponent);
-
-	UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: InputComponent class=%s"),
-	       *GetNameSafe(PlayerInputComponent->GetClass()));
-
-	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent);
-	if (!EIC)
-	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: FAILED cast to EnhancedInputComponent. "
-		       "Go to Project Settings > Engine > Input > Default Input Component Class = EnhancedInputComponent"));
-		return;
-	}
-
-	if (m_InputMove)
-	{
-		EIC->BindAction(m_InputMove, ETriggerEvent::Triggered, this, &AMetaballs::Move);
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: IA_Move bound OK"));
-	}
-	else
-	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: m_InputMove is NULL — assign IA_SlimeMove on the actor in Details > Slime|Player"));
-	}
-}
-
-void AMetaballs::Move(const FInputActionValue& Value)
-{
-	UE_LOG(YourLog, Warning, TEXT("AMetaballs [Move]: called"));
-	if (!RootCapsule) return;
-
-	// Axis2D: X = right/left, Y = forward/back
-	const FVector2D MovementVector = Value.Get<FVector2D>();
-
-	FVector ForwardDir = FVector::ForwardVector;
-	FVector RightDir   = FVector::RightVector;
-
-	if (AController* Ctrl = GetController())
-	{
-		FRotator Rot = Ctrl->GetControlRotation();
-		Rot.Pitch = 0.0f;
-		Rot.Roll  = 0.0f;
-		ForwardDir = FRotationMatrix(Rot).GetUnitAxis(EAxis::X);
-		RightDir   = FRotationMatrix(Rot).GetUnitAxis(EAxis::Y);
-	}
-
-	RootCapsule->AddForce(ForwardDir * MovementVector.Y * m_MoveSpeed, NAME_None, true);
-	RootCapsule->AddForce(RightDir   * MovementVector.X * m_MoveSpeed, NAME_None, true);
-}
-
-void AMetaballs::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp,
-                            bool bSelfMoved, FVector HitLocation, FVector HitNormal,
-                            FVector NormalImpulse, const FHitResult& Hit)
-{
-	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
-
-	// Scale spread by how hard we hit (NormalImpulse is in kg*cm/s)
-	float ImpactStrength = FMath::Clamp(NormalImpulse.Size() / 2000.0f, 0.05f, 1.0f);
-	m_SpreadAmount = FMath::Clamp(m_SpreadAmount + m_ImpactSpreadStrength * ImpactStrength, 1.0f, 2.5f);
+	SetActorLocation(WorldPosition);
 }
 
 // Called every frame
@@ -363,9 +249,9 @@ void AMetaballs::Update(float dt)
 	// Decay spread back toward 1.0 (normal) over time
 	m_SpreadAmount = FMath::FInterpTo(m_SpreadAmount, 1.0f, dt, m_SpreadDecayRate);
 
-	if (IsPlayerControlled())
+	if (!m_automode)
 	{
-		// --- Player-controlled slime: spring physics ---
+		// --- Character-driven slime: spring physics (call SetSlimePosition every tick from your character BP) ---
 		// Ball 0 = core, always at the actor origin in normalized space
 		m_Balls[0].p = FVector::ZeroVector;
 		m_Balls[0].v = FVector::ZeroVector;
@@ -900,13 +786,6 @@ void AMetaballs::SetScale(float value)
 	}
 
 	m_Scale = ret;
-
-	// Keep collision capsule in sync with visual scale
-	if (RootCapsule)
-	{
-		float capsuleSize = m_Scale * 0.8f;
-		RootCapsule->SetCapsuleSize(capsuleSize, capsuleSize);
-	}
 }
 
 
