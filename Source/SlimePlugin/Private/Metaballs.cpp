@@ -243,50 +243,76 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 }
 #endif
 
+static void RegisterMappingContext(AController* Controller, UInputMappingContext* IMC)
+{
+	if (!IMC)
+	{
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: m_DefaultMappingContext is NULL — assign IMC_Slime on the actor in Details > Slime|Player"));
+		return;
+	}
+	APlayerController* PC = Cast<APlayerController>(Controller);
+	if (!PC)
+	{
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: no PlayerController yet (RegisterMappingContext called too early)"));
+		return;
+	}
+	UEnhancedInputLocalPlayerSubsystem* Subsystem =
+	    ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer());
+	if (Subsystem)
+	{
+		Subsystem->AddMappingContext(IMC, 0);
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: IMC registered OK"));
+	}
+	else
+	{
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [Input]: EnhancedInputLocalPlayerSubsystem not found — is Enhanced Input enabled in plugins?"));
+	}
+}
+
 // Called when the game starts or when spawned
 void AMetaballs::BeginPlay()
 {
 	Super::BeginPlay();
+	UE_LOG(YourLog, Warning, TEXT("AMetaballs [BeginPlay]: Controller=%s"), *GetNameSafe(GetController()));
+	RegisterMappingContext(GetController(), m_DefaultMappingContext);
+}
 
-	// Register the mapping context with the Enhanced Input subsystem
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
-		        ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-		{
-			if (m_DefaultMappingContext)
-			{
-				Subsystem->AddMappingContext(m_DefaultMappingContext, 0);
-			}
-		}
-	}
+void AMetaballs::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	UE_LOG(YourLog, Warning, TEXT("AMetaballs [PossessedBy]: Controller=%s"), *GetNameSafe(NewController));
+	RegisterMappingContext(NewController, m_DefaultMappingContext);
 }
 
 void AMetaballs::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: InputComponent class=%s"),
+	       *GetNameSafe(PlayerInputComponent->GetClass()));
+
 	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent);
 	if (!EIC)
 	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs: EnhancedInputComponent not found. "
-		       "Make sure the project uses Enhanced Input (Project Settings > Input > Default Input Component Class)."));
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: FAILED cast to EnhancedInputComponent. "
+		       "Go to Project Settings > Engine > Input > Default Input Component Class = EnhancedInputComponent"));
 		return;
 	}
 
 	if (m_InputMove)
 	{
 		EIC->BindAction(m_InputMove, ETriggerEvent::Triggered, this, &AMetaballs::Move);
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: IA_Move bound OK"));
 	}
 	else
 	{
-		UE_LOG(YourLog, Warning, TEXT("AMetaballs: m_InputMove is not assigned. "
-		       "Assign an InputAction (Axis2D) in the actor's Details panel."));
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs [SetupInput]: m_InputMove is NULL — assign IA_SlimeMove on the actor in Details > Slime|Player"));
 	}
 }
 
 void AMetaballs::Move(const FInputActionValue& Value)
 {
+	UE_LOG(YourLog, Warning, TEXT("AMetaballs [Move]: called"));
 	if (!RootCapsule) return;
 
 	// Axis2D: X = right/left, Y = forward/back
