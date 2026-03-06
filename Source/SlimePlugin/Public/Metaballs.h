@@ -77,6 +77,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Slime")
 	void SetSlimePosition(FVector WorldPosition);
 
+	UFUNCTION(BlueprintCallable, Category = "Slime")
+	void SetGravity(float value);
+
+	UFUNCTION(BlueprintCallable, Category = "Slime")
+	void SetBounciness(float value);
+
+	UFUNCTION(BlueprintCallable, Category = "Slime")
+	void SetDamping(float value);
+
 	/*Number of metaballs (0 = disable)*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings, meta = (DisplayName = "Number of balls"))
 	int32 m_NumBalls;
@@ -126,7 +135,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Spread Decay Rate"))
 	float m_SpreadDecayRate;
 
-	// Components
+	/*Gravity acceleration pulling balls downward (world Z axis)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Gravity"))
+	float m_Gravity;
+
+	/*Bounciness on wall/floor collision (0=no bounce, 1=perfect elastic)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Bounciness", ClampMin = "0.0", ClampMax = "1.0"))
+	float m_Bounciness;
+
+	/*Velocity damping simulating slime viscosity (0=no damping, 1=instant stop)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Damping", ClampMin = "0.0", ClampMax = "1.0"))
+	float m_Damping;
+
 	UPROPERTY()
 	UBoxComponent* MetaBallsBoundBox;
 
