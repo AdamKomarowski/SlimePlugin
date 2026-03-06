@@ -1,5 +1,5 @@
 {
-    "FileVersion" : 1,
+    "FileVersion" : 3,
     "FriendlyName" : "Slime Plugin",
     "Version" : 1,
     "VersionName": "1.0",
@@ -8,14 +8,15 @@
     "Category" : "Slime",
     "CreatedBy" : "Adam Komarowski",
     "CreatedByURL" : "",
-    "CanContainContent" : "true",
-	"EnabledByDefault" : true,
+    "CanContainContent" : true,
+    "EnabledByDefault" : true,
 
     "Modules" :
     [
         {
             "Name" : "SlimePlugin",
-            "Type" : "Runtime"
-        } 
+            "Type" : "Runtime",
+            "LoadingPhase" : "Default"
+        }
     ]
 }

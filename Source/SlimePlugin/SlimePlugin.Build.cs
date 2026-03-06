@@ -6,7 +6,7 @@ public class SlimePlugin : ModuleRules
 
     public SlimePlugin(ReadOnlyTargetRules Target) : base(Target)
     {
-        PrivatePCHHeaderFile = "Private/SlimePluginPrivatePCH.h";
+        PrivatePCHHeaderFile = "Public/SlimePluginPrivatePCH.h";
 
         PublicDependencyModuleNames.AddRange(new string[] { "Engine", "Core", "CoreUObject", "InputCore", "ProceduralMeshComponent" });
     }
