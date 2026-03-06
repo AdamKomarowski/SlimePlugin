@@ -2,6 +2,10 @@
 #include "SlimePluginPrivatePCH.h"
 #include "CMarchingCubes.h"
 #include "Metaballs.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputMappingContext.h"
+#include "InputAction.h"
 
 
 
@@ -47,6 +51,8 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_AutoLimitZ = 1.0f;
 	m_Material = nullptr;
 
+	m_DefaultMappingContext = nullptr;
+	m_InputMove           = nullptr;
 	m_MoveSpeed           = 500.0f;
 	m_SpringStiffness     = 20.0f;
 	m_SpringDamping       = 5.0f;
@@ -241,46 +247,65 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 void AMetaballs::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Register the mapping context with the Enhanced Input subsystem
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+		        ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			if (m_DefaultMappingContext)
+			{
+				Subsystem->AddMappingContext(m_DefaultMappingContext, 0);
+			}
+		}
+	}
 }
 
 void AMetaballs::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Requires "MoveForward" and "MoveRight" axis mappings in Project Settings > Input
-	PlayerInputComponent->BindAxis("MoveForward", this, &AMetaballs::MoveForward);
-	PlayerInputComponent->BindAxis("MoveRight",   this, &AMetaballs::MoveRight);
+	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (!EIC)
+	{
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs: EnhancedInputComponent not found. "
+		       "Make sure the project uses Enhanced Input (Project Settings > Input > Default Input Component Class)."));
+		return;
+	}
+
+	if (m_InputMove)
+	{
+		EIC->BindAction(m_InputMove, ETriggerEvent::Triggered, this, &AMetaballs::Move);
+	}
+	else
+	{
+		UE_LOG(YourLog, Warning, TEXT("AMetaballs: m_InputMove is not assigned. "
+		       "Assign an InputAction (Axis2D) in the actor's Details panel."));
+	}
 }
 
-void AMetaballs::MoveForward(float Value)
+void AMetaballs::Move(const FInputActionValue& Value)
 {
-	if (Value == 0.0f || !RootCapsule) return;
+	if (!RootCapsule) return;
 
-	FVector Dir = FVector::ForwardVector;
+	// Axis2D: X = right/left, Y = forward/back
+	const FVector2D MovementVector = Value.Get<FVector2D>();
+
+	FVector ForwardDir = FVector::ForwardVector;
+	FVector RightDir   = FVector::RightVector;
+
 	if (AController* Ctrl = GetController())
 	{
 		FRotator Rot = Ctrl->GetControlRotation();
 		Rot.Pitch = 0.0f;
 		Rot.Roll  = 0.0f;
-		Dir = FRotationMatrix(Rot).GetUnitAxis(EAxis::X);
+		ForwardDir = FRotationMatrix(Rot).GetUnitAxis(EAxis::X);
+		RightDir   = FRotationMatrix(Rot).GetUnitAxis(EAxis::Y);
 	}
-	// bAccelChange=true makes force mass-independent (feels the same regardless of physics mass setting)
-	RootCapsule->AddForce(Dir * Value * m_MoveSpeed, NAME_None, true);
-}
 
-void AMetaballs::MoveRight(float Value)
-{
-	if (Value == 0.0f || !RootCapsule) return;
-
-	FVector Dir = FVector::RightVector;
-	if (AController* Ctrl = GetController())
-	{
-		FRotator Rot = Ctrl->GetControlRotation();
-		Rot.Pitch = 0.0f;
-		Rot.Roll  = 0.0f;
-		Dir = FRotationMatrix(Rot).GetUnitAxis(EAxis::Y);
-	}
-	RootCapsule->AddForce(Dir * Value * m_MoveSpeed, NAME_None, true);
+	RootCapsule->AddForce(ForwardDir * MovementVector.Y * m_MoveSpeed, NAME_None, true);
+	RootCapsule->AddForce(RightDir   * MovementVector.X * m_MoveSpeed, NAME_None, true);
 }
 
 void AMetaballs::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp,

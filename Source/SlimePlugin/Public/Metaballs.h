@@ -4,7 +4,11 @@
 #include "ProceduralMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
+#include "InputActionValue.h"
 #include "Metaballs.generated.h"
+
+class UInputMappingContext;
+class UInputAction;
 
 
 DECLARE_LOG_CATEGORY_EXTERN(YourLog, Log, All);
@@ -113,6 +117,14 @@ public:
 
 	// --- Player physics ---
 
+	/*Assign an InputMappingContext asset (create it in your project, map WASD to IA_SlimeMove)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Player", meta = (DisplayName = "Input Mapping Context"))
+	UInputMappingContext* m_DefaultMappingContext;
+
+	/*Assign an InputAction asset with Value Type = Axis2D (Vector2D)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Player", meta = (DisplayName = "Input Action Move"))
+	UInputAction* m_InputMove;
+
 	/*Force applied per input unit for player movement*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Player", meta = (DisplayName = "Move Speed"))
 	float m_MoveSpeed;
@@ -170,9 +182,8 @@ protected:
 	void  AddNeighborsToList(int nCase, int x, int y, int z);
 	void  AddNeighbor(int x, int y, int z);
 
-	// Input handlers
-	void MoveForward(float Value);
-	void MoveRight(float Value);
+	// Enhanced Input handler (Axis2D: X = right, Y = forward)
+	void Move(const FInputActionValue& Value);
 
 	float m_fLevel;
 

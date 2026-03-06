@@ -8,6 +8,6 @@ public class SlimePlugin : ModuleRules
     {
         PrivatePCHHeaderFile = "Public/SlimePluginPrivatePCH.h";
 
-        PublicDependencyModuleNames.AddRange(new string[] { "Engine", "Core", "CoreUObject", "InputCore", "ProceduralMeshComponent" });
+        PublicDependencyModuleNames.AddRange(new string[] { "Engine", "Core", "CoreUObject", "InputCore", "ProceduralMeshComponent", "EnhancedInput" });
     }
 }
