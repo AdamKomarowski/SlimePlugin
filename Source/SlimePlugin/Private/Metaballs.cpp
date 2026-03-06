@@ -237,6 +237,23 @@ void AMetaballs::BeginPlay()
 	Super::BeginPlay();
 }
 
+void AMetaballs::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	delete[] m_pfGridEnergy;
+	m_pfGridEnergy = nullptr;
+
+	delete[] m_pnGridPointStatus;
+	m_pnGridPointStatus = nullptr;
+
+	delete[] m_pnGridVoxelStatus;
+	m_pnGridVoxelStatus = nullptr;
+
+	delete[] m_pOpenVoxels;
+	m_pOpenVoxels = nullptr;
+}
+
 void AMetaballs::SetSlimePosition(FVector WorldPosition)
 {
 	// Compute per-frame movement delta and convert to normalized ball space
@@ -528,6 +545,9 @@ void AMetaballs::AddNeighborsToList(int nCase, int x, int y, int z)
 
 void AMetaballs::AddNeighbor(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x >= m_nGridSize || y >= m_nGridSize || z >= m_nGridSize)
+		return;
+
 	if (IsGridVoxelComputed(x, y, z) || IsGridVoxelInList(x, y, z))
 		return;
 
@@ -703,13 +723,13 @@ int AMetaballs::ConvertWorldCoordinateToGridPoint(float x)
 void AMetaballs::SetGridSize(int nSize)
 {
 	if (m_pfGridEnergy)
-		delete m_pfGridEnergy;
+		delete[] m_pfGridEnergy;
 
 	if (m_pnGridPointStatus)
-		delete m_pnGridPointStatus;
+		delete[] m_pnGridPointStatus;
 
 	if (m_pnGridVoxelStatus)
-		delete m_pnGridVoxelStatus;
+		delete[] m_pnGridVoxelStatus;
 
 	m_fVoxelSize = 2 / float(nSize);
 	m_nGridSize = nSize;
