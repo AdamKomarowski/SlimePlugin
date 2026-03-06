@@ -1,0 +1,21 @@
+{
+    "FileVersion" : 1,
+    "FriendlyName" : "Slime Plugin",
+    "Version" : 1,
+    "VersionName": "1.0",
+    "EngineVersion" : "5.7.2",
+    "Description" : "Slime Plugin",
+    "Category" : "Slime",
+    "CreatedBy" : "Adam Komarowski",
+    "CreatedByURL" : "",
+    "CanContainContent" : "true",
+	"EnabledByDefault" : true,
+
+    "Modules" :
+    [
+        {
+            "Name" : "SlimePlugin",
+            "Type" : "Runtime"
+        } 
+    ]
+}
