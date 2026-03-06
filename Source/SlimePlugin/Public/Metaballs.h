@@ -3,7 +3,7 @@
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/SceneComponent.h"
-#include "Slime.generated.h"
+#include "Metaballs.generated.h"
 
 
 
@@ -24,7 +24,7 @@ struct SMetaBall
 
 
 UCLASS()
-class METABALLSPLUGIN_API AMetaballs : public AActor
+class SLIMEPLUGIN_API AMetaballs : public AActor
 {
 	GENERATED_UCLASS_BODY()
 	

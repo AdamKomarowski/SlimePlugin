@@ -1,7 +1,7 @@
 
 #include "SlimePluginPrivatePCH.h"
 #include "CMarchingCubes.h"
-#include "Slime.h"
+#include "Metaballs.h"
 
 
 
@@ -109,7 +109,7 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	/// track Number of balls value
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMetaballs, m_NumBalls))
 	{
-		UIntProperty* prop = static_cast<UIntProperty*>(e.Property);
+		FIntProperty* prop = CastField<FIntProperty>(e.Property);
 
 		int32 value = prop->GetPropertyValue(prop->ContainerPtrToValuePtr<int32>(this));
 
@@ -130,7 +130,7 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMetaballs, m_Scale))
 	{
 
-		UFloatProperty* prop = static_cast<UFloatProperty*>(e.Property);
+		FFloatProperty* prop = CastField<FFloatProperty>(e.Property);
 
 		float value = prop->GetPropertyValue(prop->ContainerPtrToValuePtr<float>(this));
 
@@ -153,7 +153,7 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMetaballs, m_GridStep))
 	{
 
-		UIntProperty* prop = static_cast<UIntProperty*>(e.Property);
+		FIntProperty* prop = CastField<FIntProperty>(e.Property);
 
 		int32 value = prop->GetPropertyValue(prop->ContainerPtrToValuePtr<int32>(this));
 
@@ -172,7 +172,7 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMetaballs, m_AutoLimitX))
 	{
 
-		UFloatProperty* prop = static_cast<UFloatProperty*>(e.Property);
+		FFloatProperty* prop = CastField<FFloatProperty>(e.Property);
 
 		float value = prop->GetPropertyValue(prop->ContainerPtrToValuePtr<float>(this));
 
@@ -191,7 +191,7 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMetaballs, m_AutoLimitY))
 	{
 
-		UFloatProperty* prop = static_cast<UFloatProperty*>(e.Property);
+		FFloatProperty* prop = CastField<FFloatProperty>(e.Property);
 
 		float value = prop->GetPropertyValue(prop->ContainerPtrToValuePtr<float>(this));
 
@@ -211,7 +211,7 @@ void AMetaballs::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMetaballs, m_AutoLimitZ))
 	{
 
-		UFloatProperty* prop = static_cast<UFloatProperty*>(e.Property);
+		FFloatProperty* prop = CastField<FFloatProperty>(e.Property);
 
 		float value = prop->GetPropertyValue(prop->ContainerPtrToValuePtr<float>(this));
 
