@@ -35,10 +35,10 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_AutoLimitZ = 1.0f;
 	m_Material = nullptr;
 
-	m_Gravity = 2.0f;
-	m_Bounciness = 0.35f;
-	m_Damping = 0.5f;
-	m_CohesionStrength = 0.5f;
+	m_Gravity = 4.0f;       // stronger pull keeps blobs on the ground
+	m_Bounciness = 0.1f;   // jelly barely bounces
+	m_Damping = 0.7f;      // high viscosity — slime drags to a stop quickly
+	m_CohesionStrength = 1.5f; // blobs stay together
 
 	m_pfGridEnergy = nullptr;
 	m_pnGridPointStatus = nullptr;
@@ -441,8 +441,9 @@ void AMetaballs::CheckWorldCollisions(float dt)
 	QueryParams.AddIgnoredActor(this);
 
 	// Each ball's visual radius in world space: E = mass/dist^2 = m_fLevel → dist = sqrt(mass/fLevel)
-	// Use that as the sweep sphere so the ball surface (not its center) touches walls
 	const float BallRadius = FMath::Sqrt(1.0f / m_fLevel) * m_Scale;
+	// Extra skin so floating-point drift never re-penetrates next frame
+	const float Skin = BallRadius * 0.05f + 1.0f;
 
 	// In non-auto mode ball 0 is pinned to origin — skip it
 	const int StartIdx = m_automode ? 0 : 1;
@@ -463,35 +464,58 @@ void AMetaballs::CheckWorldCollisions(float dt)
 			m_Balls[i].v.X * m_Scale
 		);
 
-		FVector NextWorldPos = WorldPos + WorldVel * dt;
-
-		// If the ball isn't moving, just do an overlap check to push it out
-		if (WorldVel.IsNearlyZero(0.01f))
-			NextWorldPos = WorldPos + FVector(0, 0, 0.01f);
+		// Probe direction: velocity, or a tiny downward nudge so gravity keeps balls on floor
+		FVector ProbeDir = WorldVel.IsNearlyZero(0.01f) ? FVector(0, 0, -1.0f) : WorldVel.GetSafeNormal();
+		FVector NextWorldPos = WorldPos + ProbeDir * FMath::Max(WorldVel.Size() * dt, 2.0f);
 
 		FHitResult Hit;
 		FCollisionShape Sphere = FCollisionShape::MakeSphere(BallRadius);
 
-		if (World->SweepSingleByChannel(Hit, WorldPos, NextWorldPos, FQuat::Identity,
+		if (!World->SweepSingleByChannel(Hit, WorldPos, NextWorldPos, FQuat::Identity,
 			ECC_WorldStatic, Sphere, QueryParams))
+			continue;
+
+		float normalVelMag = FVector::DotProduct(WorldVel, Hit.Normal);
+
+		// Only respond when the ball is moving INTO the surface (prevents oscillation)
+		if (normalVelMag >= 0.0f)
+			continue;
+
+		// Place ball on surface + skin so it won't re-penetrate next frame
+		FVector SafeWorldPos = Hit.Location + Hit.Normal * (BallRadius + Skin);
+
+		// Decompose velocity into normal and tangential components
+		FVector normalVel      = normalVelMag * Hit.Normal;
+		FVector tangentialVel  = WorldVel - normalVel;
+		float   impactSpeed    = FMath::Abs(normalVelMag);
+
+		// Floor contact (normal points mostly upward): rest on surface, no bounce
+		// Wall / ceiling: bounce with m_Bounciness
+		bool bIsFloor = Hit.Normal.Z > 0.5f;
+		FVector newVel;
+		if (bIsFloor)
 		{
-			// Place the ball just outside the hit surface
-			FVector SafeWorldPos = Hit.Location + Hit.Normal * BallRadius;
-
-			// Reflect velocity off the surface normal, scaled by bounciness
-			FVector ReflectedVel = WorldVel - 2.0f * FVector::DotProduct(WorldVel, Hit.Normal) * Hit.Normal;
-			ReflectedVel *= m_Bounciness;
-
-			// Write back to normalized space
-			FVector LocalOffset = SafeWorldPos - GetActorLocation();
-			m_Balls[i].p.X = LocalOffset.Z / m_Scale;
-			m_Balls[i].p.Y = LocalOffset.Y / m_Scale;
-			m_Balls[i].p.Z = LocalOffset.X / m_Scale;
-
-			m_Balls[i].v.X = ReflectedVel.Z / m_Scale;
-			m_Balls[i].v.Y = ReflectedVel.Y / m_Scale;
-			m_Balls[i].v.Z = ReflectedVel.X / m_Scale;
+			// Zero out vertical velocity — ball slides freely on floor
+			// Small bounciness still allowed for impact feel
+			newVel = tangentialVel;
+			if (impactSpeed > 60.0f)
+				newVel += Hit.Normal * impactSpeed * m_Bounciness * 0.3f;
 		}
+		else
+		{
+			// Wall / ceiling: full reflection
+			newVel = tangentialVel + Hit.Normal * impactSpeed * m_Bounciness;
+		}
+
+		// Write back to normalized space
+		FVector LocalOffset = SafeWorldPos - GetActorLocation();
+		m_Balls[i].p.X = LocalOffset.Z / m_Scale;
+		m_Balls[i].p.Y = LocalOffset.Y / m_Scale;
+		m_Balls[i].p.Z = LocalOffset.X / m_Scale;
+
+		m_Balls[i].v.X = newVel.Z / m_Scale;
+		m_Balls[i].v.Y = newVel.Y / m_Scale;
+		m_Balls[i].v.Z = newVel.X / m_Scale;
 	}
 }
 
