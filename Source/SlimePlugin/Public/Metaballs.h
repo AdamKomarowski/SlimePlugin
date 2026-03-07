@@ -177,6 +177,7 @@ public:
 	void  Update(float fDeltaTime);
 	void  Render();
 	void  SetGridSize(int nSize);
+	void  CheckWorldCollisions(float dt);
 
 protected:
 

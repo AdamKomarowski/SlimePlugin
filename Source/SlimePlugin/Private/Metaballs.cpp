@@ -323,6 +323,8 @@ void AMetaballs::Update(float dt)
 
 		// Reset delta so it doesn't persist when not moving
 		m_MoveDelta = FVector::ZeroVector;
+
+		CheckWorldCollisions(dt);
 	}
 	else
 	{
@@ -409,6 +411,71 @@ void AMetaballs::Update(float dt)
 				m_Balls[i].p.Z =  m_AutoLimitZ - m_fVoxelSize;
 				m_Balls[i].v.Z = -FMath::Abs(m_Balls[i].v.Z) * m_Bounciness;
 			}
+		}
+
+		CheckWorldCollisions(dt);
+	}
+}
+
+void AMetaballs::CheckWorldCollisions(float dt)
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	// Each ball's visual radius in world space: E = mass/dist^2 = m_fLevel → dist = sqrt(mass/fLevel)
+	// Use that as the sweep sphere so the ball surface (not its center) touches walls
+	const float BallRadius = FMath::Sqrt(1.0f / m_fLevel) * m_Scale;
+
+	// In non-auto mode ball 0 is pinned to origin — skip it
+	const int StartIdx = m_automode ? 0 : 1;
+
+	for (int i = StartIdx; i < m_NumBalls; i++)
+	{
+		// Convert normalized ball position to world space
+		// Coordinate mapping: ball.p.X = world Z, ball.p.Y = world Y, ball.p.Z = world X
+		FVector WorldPos = GetActorLocation() + FVector(
+			m_Balls[i].p.Z * m_Scale,
+			m_Balls[i].p.Y * m_Scale,
+			m_Balls[i].p.X * m_Scale
+		);
+
+		FVector WorldVel = FVector(
+			m_Balls[i].v.Z * m_Scale,
+			m_Balls[i].v.Y * m_Scale,
+			m_Balls[i].v.X * m_Scale
+		);
+
+		FVector NextWorldPos = WorldPos + WorldVel * dt;
+
+		// If the ball isn't moving, just do an overlap check to push it out
+		if (WorldVel.IsNearlyZero(0.01f))
+			NextWorldPos = WorldPos + FVector(0, 0, 0.01f);
+
+		FHitResult Hit;
+		FCollisionShape Sphere = FCollisionShape::MakeSphere(BallRadius);
+
+		if (World->SweepSingleByChannel(Hit, WorldPos, NextWorldPos, FQuat::Identity,
+			ECC_WorldStatic, Sphere, QueryParams))
+		{
+			// Place the ball just outside the hit surface
+			FVector SafeWorldPos = Hit.Location + Hit.Normal * BallRadius;
+
+			// Reflect velocity off the surface normal, scaled by bounciness
+			FVector ReflectedVel = WorldVel - 2.0f * FVector::DotProduct(WorldVel, Hit.Normal) * Hit.Normal;
+			ReflectedVel *= m_Bounciness;
+
+			// Write back to normalized space
+			FVector LocalOffset = SafeWorldPos - GetActorLocation();
+			m_Balls[i].p.X = LocalOffset.Z / m_Scale;
+			m_Balls[i].p.Y = LocalOffset.Y / m_Scale;
+			m_Balls[i].p.Z = LocalOffset.X / m_Scale;
+
+			m_Balls[i].v.X = ReflectedVel.Z / m_Scale;
+			m_Balls[i].v.Y = ReflectedVel.Y / m_Scale;
+			m_Balls[i].v.Z = ReflectedVel.X / m_Scale;
 		}
 	}
 }
