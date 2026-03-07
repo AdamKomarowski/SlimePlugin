@@ -95,6 +95,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Slime")
 	void SetDamping(float value);
 
+	UFUNCTION(BlueprintCallable, Category = "Slime")
+	void SetCohesionStrength(float value);
+
 	/*Number of metaballs (0 = disable)*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Settings, meta = (DisplayName = "Number of balls"))
 	int32 m_NumBalls;
@@ -167,6 +170,10 @@ public:
 	/*Velocity damping simulating slime viscosity (0=no damping, 1=instant stop)*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Damping", ClampMin = "0.0", ClampMax = "1.0"))
 	float m_Damping;
+
+	/*How strongly balls attract each other toward the group center of mass (0=no cohesion)*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slime|Physics", meta = (DisplayName = "Cohesion Strength", ClampMin = "0.0"))
+	float m_CohesionStrength;
 
 	UPROPERTY()
 	UBoxComponent* MetaBallsBoundBox;

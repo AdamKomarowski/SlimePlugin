@@ -38,6 +38,7 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_Gravity = 2.0f;
 	m_Bounciness = 0.35f;
 	m_Damping = 0.5f;
+	m_CohesionStrength = 0.5f;
 
 	m_pfGridEnergy = nullptr;
 	m_pnGridPointStatus = nullptr;
@@ -317,6 +318,9 @@ void AMetaballs::Update(float dt)
 			// Gravity pulls satellite balls downward (ball.p.X = world Z)
 			force.X -= m_Gravity;
 
+			// Cohesion: pull toward center of mass
+			force += (CoM - m_Balls[i].p) * m_CohesionStrength;
+
 			m_Balls[i].v += force * dt;
 			m_Balls[i].p += m_Balls[i].v * dt;
 		}
@@ -329,6 +333,13 @@ void AMetaballs::Update(float dt)
 	else
 	{
 		// --- Auto-fly mode: random target attraction + gravity + bounce ---
+
+		// Compute center of mass for cohesion
+		FVector AutoCoM = FVector::ZeroVector;
+		for (int i = 0; i < m_NumBalls; i++)
+			AutoCoM += m_Balls[i].p;
+		AutoCoM /= FMath::Max(m_NumBalls, 1);
+
 		for (int i = 0; i < m_NumBalls; i++)
 		{
 			// Gravity pulls balls downward (ball.p.X = world Z)
@@ -356,6 +367,10 @@ void AMetaballs::Update(float dt)
 				m_Balls[i].v.Y += 0.1f * y * fInvLen * dt;
 				m_Balls[i].v.Z += 0.1f * z * fInvLen * dt;
 			}
+
+			// Cohesion: pull toward center of mass
+			FVector toCoM = AutoCoM - m_Balls[i].p;
+			m_Balls[i].v += toCoM * m_CohesionStrength * dt;
 
 			// Apply damping (frame-rate independent)
 			float dampFactor = FMath::Pow(1.0f - FMath::Clamp(m_Damping, 0.0f, 0.9999f), dt);
@@ -1054,4 +1069,9 @@ void AMetaballs::SetBounciness(float value)
 void AMetaballs::SetDamping(float value)
 {
 	m_Damping = FMath::Clamp(value, 0.0f, 1.0f);
+}
+
+void AMetaballs::SetCohesionStrength(float value)
+{
+	m_CohesionStrength = FMath::Max(0.0f, value);
 }
