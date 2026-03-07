@@ -53,6 +53,7 @@ AMetaballs::AMetaballs(const FObjectInitializer& ObjectInitializer) : Super(Obje
 	m_pfGridEnergy     = nullptr;
 	m_pnGridPointStatus = nullptr;
 	m_pnGridVoxelStatus = nullptr;
+	m_pOpenVoxels      = nullptr;
 
 	m_SpreadAmount = 1.0f;
 	m_MoveDelta    = FVector::ZeroVector;
@@ -69,12 +70,13 @@ void AMetaballs::PostInitializeComponents()
 	m_nGridSize = 0;
 
 	m_nMaxOpenVoxels = AMetaballs::MAX_OPEN_VOXELS;
+	delete[] m_pOpenVoxels;
 	m_pOpenVoxels = new int[m_nMaxOpenVoxels * 3];
 
 	m_nNumOpenVoxels = 0;
-	m_pfGridEnergy = 0;
-	m_pnGridPointStatus = 0;
-	m_pnGridVoxelStatus = 0;
+	m_pfGridEnergy = nullptr;
+	m_pnGridPointStatus = nullptr;
+	m_pnGridVoxelStatus = nullptr;
 
 	m_nNumVertices = 0;
 	m_nNumIndices = 0;
@@ -431,6 +433,10 @@ void AMetaballs::Render()
 	m_nNumVertices = 0;
 	nCase = 0;
 
+	// Guard: grid arrays must be valid before use
+	if (!m_pnGridPointStatus || !m_pnGridVoxelStatus || m_nGridSize <= 0)
+		return;
+
 	// Clear status grids
 	memset(m_pnGridPointStatus, 0, (m_nGridSize + 1)*(m_nGridSize + 1)*(m_nGridSize + 1));
 	memset(m_pnGridVoxelStatus, 0, m_nGridSize*m_nGridSize*m_nGridSize);
@@ -439,14 +445,17 @@ void AMetaballs::Render()
 
 	for (int i = 0; i < m_NumBalls; i++)
 	{
-		x = ConvertWorldCoordinateToGridPoint(m_Balls[i].p[0]);
-		y = ConvertWorldCoordinateToGridPoint(m_Balls[i].p[1]);
-		z = ConvertWorldCoordinateToGridPoint(m_Balls[i].p[2]);
+		x = FMath::Clamp(ConvertWorldCoordinateToGridPoint(m_Balls[i].p[0]), 0, m_nGridSize - 1);
+		y = FMath::Clamp(ConvertWorldCoordinateToGridPoint(m_Balls[i].p[1]), 0, m_nGridSize - 1);
+		z = FMath::Clamp(ConvertWorldCoordinateToGridPoint(m_Balls[i].p[2]), 0, m_nGridSize - 1);
 
 		bComputed = false;
 
 		while (1)
 		{
+			if (z < 0)
+				break;
+
 			if (IsGridVoxelComputed(x, y, z))
 			{
 				bComputed = true;
@@ -741,6 +750,8 @@ void AMetaballs::SetGridSize(int nSize)
 
 inline bool AMetaballs::IsGridPointComputed(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x > m_nGridSize || y > m_nGridSize || z > m_nGridSize)
+		return false;
 	if (m_pnGridPointStatus[x +
 		y*(m_nGridSize + 1) +
 		z*(m_nGridSize + 1)*(m_nGridSize + 1)] == 1)
@@ -751,6 +762,8 @@ inline bool AMetaballs::IsGridPointComputed(int x, int y, int z)
 
 inline bool AMetaballs::IsGridVoxelComputed(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x >= m_nGridSize || y >= m_nGridSize || z >= m_nGridSize)
+		return false;
 	if (m_pnGridVoxelStatus[x +
 		y*m_nGridSize +
 		z*m_nGridSize*m_nGridSize] == 1)
@@ -761,6 +774,8 @@ inline bool AMetaballs::IsGridVoxelComputed(int x, int y, int z)
 
 inline bool AMetaballs::IsGridVoxelInList(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x >= m_nGridSize || y >= m_nGridSize || z >= m_nGridSize)
+		return false;
 	if (m_pnGridVoxelStatus[x +
 		y*m_nGridSize +
 		z*m_nGridSize*m_nGridSize] == 2)
@@ -771,6 +786,8 @@ inline bool AMetaballs::IsGridVoxelInList(int x, int y, int z)
 
 inline void AMetaballs::SetGridPointComputed(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x > m_nGridSize || y > m_nGridSize || z > m_nGridSize)
+		return;
 	m_pnGridPointStatus[x +
 		y*(m_nGridSize + 1) +
 		z*(m_nGridSize + 1)*(m_nGridSize + 1)] = 1;
@@ -778,6 +795,8 @@ inline void AMetaballs::SetGridPointComputed(int x, int y, int z)
 
 inline void AMetaballs::SetGridVoxelComputed(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x >= m_nGridSize || y >= m_nGridSize || z >= m_nGridSize)
+		return;
 	m_pnGridVoxelStatus[x +
 		y*m_nGridSize +
 		z*m_nGridSize*m_nGridSize] = 1;
@@ -785,6 +804,8 @@ inline void AMetaballs::SetGridVoxelComputed(int x, int y, int z)
 
 inline void AMetaballs::SetGridVoxelInList(int x, int y, int z)
 {
+	if (x < 0 || y < 0 || z < 0 || x >= m_nGridSize || y >= m_nGridSize || z >= m_nGridSize)
+		return;
 	m_pnGridVoxelStatus[x +
 		y*m_nGridSize +
 		z*m_nGridSize*m_nGridSize] = 2;
